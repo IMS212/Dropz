@@ -2,14 +2,15 @@ package dev.lazurite.dropz.mixin.client;
 
 import dev.lazurite.dropz.util.DropType;
 import dev.lazurite.dropz.util.storage.ItemEntityStorage;
-import dev.lazurite.rayon.core.impl.util.math.QuaternionHelper;
-import dev.lazurite.rayon.entity.api.EntityPhysicsElement;
+import dev.lazurite.rayon.api.EntityPhysicsElement;
+import dev.lazurite.rayon.impl.bullet.math.Convert;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.EntityRenderDispatcher;
 import net.minecraft.client.render.entity.EntityRenderer;
+import net.minecraft.client.render.entity.EntityRendererFactory;
 import net.minecraft.client.render.entity.ItemEntityRenderer;
 import net.minecraft.client.render.item.ItemRenderer;
 import net.minecraft.client.render.model.BakedModel;
@@ -34,15 +35,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ItemEntityRendererMixin extends EntityRenderer<ItemEntity> {
     @Shadow @Final private ItemRenderer itemRenderer;
 
-    protected ItemEntityRendererMixin(EntityRenderDispatcher dispatcher) {
-        super(dispatcher);
+    protected ItemEntityRendererMixin(EntityRendererFactory.Context ctx) {
+        super(ctx);
     }
 
     @Inject(at = @At("HEAD"), method = "render", cancellable = true)
     public void render(ItemEntity itemEntity, float f, float tickDelta, MatrixStack matrixStack, VertexConsumerProvider vertexConsumerProvider, int i, CallbackInfo info) {
         ItemStack itemStack = itemEntity.getStack();
-        BakedModel bakedModel = this.itemRenderer.getHeldItemModel(itemStack, itemEntity.world, null);
-        Quaternion orientation = QuaternionHelper.bulletToMinecraft(((EntityPhysicsElement) itemEntity).getPhysicsRotation(new com.jme3.math.Quaternion(), tickDelta));
+        BakedModel bakedModel = this.itemRenderer.getModel(itemStack, itemEntity.world, null, itemEntity.getId());
+        Quaternion orientation = Convert.toMinecraft(((EntityPhysicsElement) itemEntity).getPhysicsRotation(new com.jme3.math.Quaternion(), tickDelta));
         DropType type = ((ItemEntityStorage) itemEntity).getDropType();
         this.shadowRadius = 0.0f;
 

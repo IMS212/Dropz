@@ -1,17 +1,19 @@
 package dev.lazurite.dropz.mixin.common;
 
-import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import dev.lazurite.dropz.config.Config;
-import dev.lazurite.rayon.core.api.PhysicsElement;
-import dev.lazurite.rayon.core.impl.physics.space.body.ElementRigidBody;
-import dev.lazurite.rayon.core.impl.util.math.QuaternionHelper;
-import dev.lazurite.rayon.core.impl.util.math.VectorHelper;
+import dev.lazurite.rayon.api.PhysicsElement;
+import dev.lazurite.rayon.impl.bullet.collision.body.ElementRigidBody;
+import dev.lazurite.rayon.impl.bullet.collision.body.entity.EntityRigidBody;
+import dev.lazurite.rayon.impl.bullet.math.Convert;
+import dev.lazurite.toolbox.api.math.QuaternionHelper;
+import dev.lazurite.toolbox.api.math.VectorHelper;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.math.Quaternion;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
@@ -42,14 +44,14 @@ public abstract class PlayerEntityMixin extends LivingEntity {
             ElementRigidBody body = ((PhysicsElement) entity).getRigidBody();
 
             // Set the rotation
-            Quaternion orientation = new Quaternion();
+            Quaternion orientation = Convert.toMinecraft(new com.jme3.math.Quaternion());
             QuaternionHelper.rotateX(orientation, random.nextInt(180));
             QuaternionHelper.rotateY(orientation, random.nextInt(180));
             QuaternionHelper.rotateZ(orientation, random.nextInt(180));
-            body.setPhysicsRotation(orientation);
+            body.setPhysicsRotation(Convert.toBullet(orientation));
 
             // Set the linear and angular velocities
-            body.setLinearVelocity(VectorHelper.vec3dToVector3f(getRotationVec(1.0f).multiply(1.5)));
+            body.setLinearVelocity(Convert.toBullet(getRotationVec(1.0f).multiply(1.5)));
             body.setAngularVelocity(new Vector3f(random.nextInt(10) - 5, random.nextInt(10) - 5, random.nextInt(10) - 5));
 
             /* Multiply velocity by yeet multiplier if player is sneaking */

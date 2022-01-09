@@ -5,10 +5,11 @@ import com.jme3.math.Vector3f;
 import dev.lazurite.dropz.util.DropType;
 import dev.lazurite.dropz.util.storage.ItemEntityStorage;
 import dev.lazurite.dropz.Dropz;
-import dev.lazurite.rayon.core.impl.physics.space.MinecraftSpace;
-import dev.lazurite.rayon.core.impl.physics.space.body.ElementRigidBody;
-import dev.lazurite.rayon.core.impl.physics.space.body.shape.BoundingBoxShape;
-import dev.lazurite.rayon.entity.api.EntityPhysicsElement;
+import dev.lazurite.rayon.api.EntityPhysicsElement;
+import dev.lazurite.rayon.impl.bullet.collision.body.ElementRigidBody;
+import dev.lazurite.rayon.impl.bullet.collision.body.entity.EntityRigidBody;
+import dev.lazurite.rayon.impl.bullet.collision.body.shape.MinecraftShape;
+import dev.lazurite.rayon.impl.bullet.collision.space.MinecraftSpace;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.entity.*;
@@ -17,6 +18,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.Packet;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
@@ -40,7 +42,7 @@ import java.util.UUID;
  */
 @Mixin(ItemEntity.class)
 public abstract class ItemEntityMixin extends Entity implements EntityPhysicsElement, ItemEntityStorage {
-    @Unique private final ElementRigidBody rigidBody = new ElementRigidBody(this);
+    @Unique private final ElementRigidBody rigidBody = new EntityRigidBody(this);
     @Unique private Item prevItem = Items.AIR;
     @Unique private DropType type = DropType.ITEM;
 
@@ -50,6 +52,8 @@ public abstract class ItemEntityMixin extends Entity implements EntityPhysicsEle
 
     @Shadow public abstract ItemStack getStack();
     @Shadow @Nullable public abstract UUID getThrower();
+
+    @Shadow public abstract Packet<?> createSpawnPacket();
 
     @Inject(at = @At("RETURN"), method = "<init>(Lnet/minecraft/entity/EntityType;Lnet/minecraft/world/World;)V")
     public void init(EntityType<? extends ItemEntity> type, World world, CallbackInfo info) {
@@ -70,9 +74,9 @@ public abstract class ItemEntityMixin extends Entity implements EntityPhysicsEle
         if (!getStack().getItem().equals(prevItem)) {
             this.type = DropType.get(getStack());
             this.prevItem = getStack().getItem();
-            CollisionShape shape = new BoundingBoxShape(type.getBox());
+            CollisionShape shape = MinecraftShape.of(type.getBox());
 
-            MinecraftSpace.get(asEntity().getEntityWorld()).getThread().execute(() -> {
+            MinecraftSpace.get(world).getWorkerThread().execute(() -> {
                 getRigidBody().setCollisionShape(shape);
                 getRigidBody().setMass(type.getMass());
             });
@@ -83,8 +87,8 @@ public abstract class ItemEntityMixin extends Entity implements EntityPhysicsEle
         this.updatePosition(location.x, location.y + getBoundingBox().getYLength() * 0.5, location.z);
     }
 
-    @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/World;isSpaceEmpty(Lnet/minecraft/entity/Entity;)Z"))
-    public boolean isSpaceEmpty(World world, Entity entity) {
+    @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/World;isSpaceEmpty(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/math/Box;)Z"))
+    public boolean isSpaceEmpty(World instance, Entity entity, Box box) {
         return true;
     }
 
@@ -98,7 +102,7 @@ public abstract class ItemEntityMixin extends Entity implements EntityPhysicsEle
     public void setVelocityInTick2(ItemEntity itemEntity, Vec3d velocity) { }
 
     @Environment(EnvType.CLIENT)
-    @Inject(method = "method_27314", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getRotation", at = @At("HEAD"), cancellable = true)
     public void method_27314(float f, CallbackInfoReturnable<Float> info) {
         info.setReturnValue(0.0f);
     }
@@ -108,20 +112,20 @@ public abstract class ItemEntityMixin extends Entity implements EntityPhysicsEle
         info.setReturnValue(false);
     }
 
-    @Inject(method = "applyBuoyancy", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "applyWaterBuoyancy", at = @At("HEAD"), cancellable = true)
     public void applyBuoyancy(CallbackInfo info) {
         info.cancel();
     }
 
-    @Inject(method = "method_24348", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "applyLavaBuoyancy", at = @At("HEAD"), cancellable = true)
     private void method_24348(CallbackInfo info) {
        info.cancel();
     }
 
-    @Inject(method = "createSpawnPacket", at = @At("HEAD"), cancellable = true)
-    public void createSpawnPacket(CallbackInfoReturnable<Packet<?>> info) {
-        info.setReturnValue(getSpawnPacket());
-    }
+   // @Inject(method = "createSpawnPacket", at = @At("HEAD"), cancellable = true)
+   // public void createSpawnPacket(CallbackInfoReturnable<Packet<?>> info) {
+   //     info.setReturnValue(createSpawnPacket());
+   // }
 
     @Override
     public DropType getDropType() {
@@ -129,12 +133,9 @@ public abstract class ItemEntityMixin extends Entity implements EntityPhysicsEle
     }
 
     @Override
-    public ElementRigidBody getRigidBody() {
-        return this.rigidBody;
+    public EntityRigidBody getRigidBody() {
+        return (EntityRigidBody) this.rigidBody;
     }
-
-    @Override
-    public void step(MinecraftSpace space) { }
 
     private void doDamage() {
         /* Momentum */
@@ -144,13 +145,13 @@ public abstract class ItemEntityMixin extends Entity implements EntityPhysicsEle
         float v = getRigidBody().getLinearVelocity(new Vector3f()).length();
 
         if (v >= 15) {
-            for (Entity entity : asEntity().getEntityWorld().getOtherEntities(((ItemEntity) (Object) this), this.getBoundingBox(), (entity) -> entity instanceof LivingEntity)) {
+            for (Entity entity : world.getOtherEntities(((ItemEntity) (Object) this), this.getBoundingBox(), (entity) -> entity instanceof LivingEntity)) {
                 if (getThrower() != null) {
-                    if (!entity.equals(asEntity().getEntityWorld().getPlayerByUuid(getThrower()))) {
+                    if (!entity.equals(world.getPlayerByUuid(getThrower()))) {
                         entity.damage(DamageSource.GENERIC, p / 20.0f);
 
                         /* Loses 90% of its speed */
-                        MinecraftSpace.get(asEntity().getEntityWorld()).getThread().execute(() ->
+                        MinecraftSpace.get(world).getWorkerThread().execute(() ->
                                 getRigidBody().applyCentralImpulse(getRigidBody().getLinearVelocity(new Vector3f()).multLocal(0.1f).multLocal(getRigidBody().getMass())));
                     }
                 }
